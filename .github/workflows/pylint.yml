@@ -1,0 +1,252 @@
+from telebot import types
+import telebot
+import os
+
+'''Глобальні змінні'''
+global_var_write = []
+global_var_read = []
+
+
+bot = telebot.TeleBot('Your token')
+
+
+@bot.message_handler(commands=['start'])
+def start(message):
+    root_button = types.InlineKeyboardMarkup()
+    btn_write = types.InlineKeyboardButton(text = 'Записати нотатку', callback_data = 'write')
+    btn_read = types.InlineKeyboardButton(text = 'Зчитати нотатку', callback_data = 'read')
+    root_button.add(btn_write, btn_read)
+    bot.send_message(message.chat.id, 'Привіт, цей бот твій зберігач нотаток, до яких доступ маєш лише ти :)', reply_markup = root_button)
+    if not os.path.exists(f'data/{message.chat.id}'):
+        os.makedirs('data/{0}'.format(message.chat.id), exist_ok=True)
+
+
+@bot.message_handler(content_types=['text'])
+def write(message):
+    global global_var_write
+    write_var_dict = {'id': message.chat.id, 'note_content': '', 'note_title': '', 'note_directory': ''}
+    n = range(len(global_var_write))
+    if not len(global_var_write):
+        global_var_write.append(write_var_dict)
+        print(f'begin ={global_var_write}')
+    for i in n:
+        if global_var_write[i]['id'] == message.chat.id and i != (len(global_var_write)-1):
+            print(global_var_write)
+            break
+        if i == (len(global_var_write)-1) and global_var_write[i]['id'] != message.chat.id:
+            global_var_write.append(write_var_dict)
+            print(f'begin ={global_var_write}')
+    bot_write = bot.send_message(message.chat.id, 'Введи текст який хочеш зберегти')
+    bot.register_next_step_handler(bot_write, callback_write_start)
+
+
+def read(message):
+    reading = bot.send_message(message.chat.id, 'Вкажи назву директорії, яку потрібно відкрити'
+                                                '\nСписок доступних  директорій:')
+    bot.send_message(message.chat.id, "\n".join(map(str, os.listdir(f'data/{message.chat.id}'))))
+    global global_var_read
+    read_var_dict = {'id': message.chat.id, 'read_directory': '', 'read_title': '', 'list_directories': [],
+                     'list_notes': []}
+    n = range(len(global_var_read))
+    if not len(global_var_read):
+        global_var_read.append(read_var_dict)
+        print(f'begin ={global_var_read}')
+    for i in n:
+        if global_var_read[i]['id'] == message.chat.id and i != (len(global_var_read) - 1):
+            print(global_var_read)
+            break
+        if i == (len(global_var_read) - 1) and global_var_read[i]['id'] != message.chat.id:
+            global_var_read.append(read_var_dict)
+            print(f'begin ={global_var_read}')
+    bot.register_next_step_handler(reading, read_directories)
+
+
+def save_title(message):
+    global global_var_write
+    n = range(len(global_var_write))
+    note_title = message.text
+    for i in n:
+        if global_var_write[i]['id'] == message.chat.id:
+            global_var_write[i]['note_title'] = note_title
+            directory = bot.send_message(message.chat.id, 'Введи назву замітки, яка біде використанна для тексту')
+            bot.register_next_step_handler(directory, callback_save_title)
+            print(f'title ={global_var_write}')
+            break
+
+
+def save_directory(message):
+    global global_var_write
+    n = range(len(global_var_write))
+    for i in n:
+        if global_var_write[i]['id'] == message.chat.id:
+            note_directory = global_var_write[i]['note_directory']
+            note_title = global_var_write[i]['note_title']
+            note_content = global_var_write[i]['note_content']
+            print(f'directory ={global_var_write}')
+            if not os.path.exists(f'data/{message.chat.id}/{note_directory}'):
+                os.makedirs(f'data/{message.chat.id}/{note_directory}', exist_ok=True)
+            text_file = open(f'data/{message.chat.id}/{note_directory}/{note_title}.txt', "w")
+            text_file.write(note_content)
+            text_file.close()
+            root_button = types.InlineKeyboardMarkup()
+            btn_write = types.InlineKeyboardButton(text = 'Записати нотатку', callback_data = 'write')
+            btn_read = types.InlineKeyboardButton(text = 'Зчитати нотатку', callback_data = 'read')
+            root_button.add(btn_write, btn_read)
+            bot.send_message(message.chat.id, f'Замітка {note_title} збережена в директорію {note_directory}', reply_markup = root_button)
+            # global_var_write.pop(i)
+            print(f'end ={global_var_write}')
+
+
+def read_directories(message):
+    global global_var_write
+    n = range(len(global_var_read))
+    read_directory = message.text
+    list_directory = os.listdir(f'data/{message.chat.id}')
+    for i in n:
+        if global_var_read[i]['id'] == message.chat.id:
+            global_var_read[i]['list_directories'] = list_directory
+            if read_directory in list_directory:
+                list_notes = os.listdir(f'data/{message.chat.id}/{read_directory}')
+                global_var_read[i]['list_notes'] = list_notes
+                if not list_directory:
+                    empty_directory = bot.send_message(message.chat.id, 'Директорія пуста, обери іншу директорію')
+                    bot.register_next_step_handler(empty_directory, read_directories)
+                    bot.send_message(message.chat.id, 'Вкажи назву директорії, яку потрібно відкрити '
+                                                      '\nСписок доступних  директорій:')
+                    bot.send_message(message.chat.id, "\n".join(map(str, os.listdir(f'data/{message.chat.id}'))))
+                else:
+                    global_var_read[i]['read_directory'] = read_directory
+                    enter_directory = bot.send_message(message.chat.id, f'Директорія "{read_directory}" відкрита. '
+                                                                        f'\nВведи назву замітки зі списку (без .txt):')
+                    bot.send_message(message.chat.id, "\n".join(map(str, list_notes)))
+                    bot.register_next_step_handler(enter_directory, read_name)
+            else:
+                bot.send_message(message.chat.id, 'Назва директорії не вірна, введіть назву директорії,'
+                                                  'що присутня у списку:')
+                error_name = bot.send_message(message.chat.id, "\n".join(map(str, os.listdir(f'data/{message.chat.id}'))))
+                bot.register_next_step_handler(error_name, read_directories)
+            print(f'read_directories= {global_var_read}')
+            break
+
+
+def callback_write_start(message):
+    global global_var_write
+    print('good callback write start')
+    n = range(len(global_var_write))
+    print(f'callback_write_start {message.text}')
+    note_content = message.text
+    for i in n:
+        if global_var_write[i]['id'] == message.chat.id:
+            global_var_write[i]['note_content'] = note_content
+    root_button = types.InlineKeyboardMarkup()#Головна зміна, в яку поміщаються кнопки
+    btn_yes = types.InlineKeyboardButton(text = 'Так', callback_data = 'write_yes')#Кнопка так
+    btn_no = types.InlineKeyboardButton(text = 'Ні', callback_data = 'write_no')#кнопка ні
+    root_button.add(btn_yes, btn_no)#Розміщення кнопок так і ні в головну змінну з кнопками
+    bot.send_message(message.chat.id, f'Твій текст \n{note_content}\nПродовжуємо?', reply_markup=root_button)
+
+
+def callback_save_title(message):
+    global global_var_write
+    print('good callback save title')
+    print(f'callback_save_title {message.text}')
+    n = range(len(global_var_write))
+    note_title = message.text
+    for i in n:
+        if global_var_write[i]['id'] == message.chat.id:
+            global_var_write[i]['note_title'] = note_title
+            print(f'title ={global_var_write}')
+            break
+    root_button = types.InlineKeyboardMarkup()#Головна зміна, в яку поміщаються кнопки
+    btn_yes = types.InlineKeyboardButton(text = 'Так', callback_data = 'callback_save_title_yes')#Кнопка так
+    btn_no = types.InlineKeyboardButton(text = 'Ні', callback_data = 'callback_save_title_no')#кнопка ні
+    root_button.add(btn_yes, btn_no)#Розміщення кнопок так і ні в головну змінну з кнопками
+    bot.send_message(message.chat.id, 'Твій заголовок \n{0}\nПродовжуємо?'.format(note_title), reply_markup=root_button)
+
+
+def callback_save_directory(message):
+    print('good callback save directory')
+    print(f'callback_save_directory {message.text}')
+    global global_var_write
+    note_directory = message.text
+    for i in range(len(global_var_write)):
+        if global_var_write[i]['id'] == message.chat.id:
+            global_var_write[i]['note_directory'] = note_directory
+    root_button = types.InlineKeyboardMarkup()
+    btn_yes = types.InlineKeyboardButton(text = 'Так', callback_data = 'callback_save_directory_yes')
+    btn_no = types.InlineKeyboardButton(text = 'Ні', callback_data = 'callback_save_directory_no')
+    root_button.add(btn_yes, btn_no)
+    bot.send_message(message.chat.id, text = 'Введена директорія \n{0}\nПродовжити?'.format(note_directory), reply_markup=root_button)
+
+
+def read_name(message):
+    global global_var_write
+    n = range(len(global_var_read))
+    read_title = message.text
+    for i in n:
+        if global_var_read[i]['id'] == message.chat.id:
+            global_var_read[i]['read_title'] = read_title
+            list_notes = global_var_read[i]['list_notes']
+            read_directory = global_var_read[i]['read_directory']
+            bot.send_message(message.chat.id, 'Зчитую ...')
+            open_file = f'{read_directory}/{read_title}.txt'
+            if not os.path.exists(f'data/{message.chat.id}/{open_file}'):
+                error_reading = bot.send_message(message.chat.id, '''Директорія чи назва нотатки не вірні
+                \nВведи назву замітки зі списку (без .txt):''')
+                bot.send_message(message.chat.id, "\n".join(map(str, list_notes)))
+                bot.register_next_step_handler(error_reading, read_name)
+                # assert TypeError  # лише на тестовий час
+                break
+            file = open('data/{0}/{1}'.format(message.chat.id, open_file), 'r')
+            text = file.read()
+            file.close()
+            bot.send_message(message.chat.id, f'Вміст замітки:'
+                                              f'\n {text}')
+            bot.send_message(message.chat.id, f'Був прочитаний вміст замітки "{read_title}",'
+                                                                f'\n що знаходилася в директорії "{read_directory}"')
+            root_button = types.InlineKeyboardMarkup()
+            btn_write = types.InlineKeyboardButton(text = 'Записати нотатку', callback_data = 'write')
+            btn_read = types.InlineKeyboardButton(text = 'Зчитати нотатку', callback_data = 'read')
+            root_button.add(btn_write, btn_read)
+            bot.send_message(message.chat.id, text = 'Кінець нотатки. Обери щось знизу', reply_markup = root_button)
+
+
+def callback_finally(message):
+    msg = bot.send_message(message.chat.id, 'Введи назву директорії, в яку хочеш зберегти нотатку')
+    bot.register_next_step_handler(msg, callback_save_directory)
+
+
+@bot.callback_query_handler(func=lambda call: True)
+def callback_button_write(call):
+    if call.data == 'write_yes':
+        print(f'meeee {call.message.text}')
+        msg = bot.send_message(call.message.chat.id, 'Продовжимо')
+        save_title(msg)
+        print('good')
+    elif call.data == 'write_no':
+        msg = bot.send_message(call.message.chat.id, 'Йду назад ...')
+        write(msg)
+        print('good_no')
+    elif call.data == 'callback_save_title_yes':
+        msg = bot.send_message(call.message.chat.id, 'Продовжимо')
+        callback_finally(msg)
+        print('good callback save title yes')
+    elif call.data == 'callback_save_title_no':
+        msg = bot.send_message(call.message.chat.id, 'Повертаюся до заголовка')
+        save_title(msg)
+        print('good_no callback save title')
+    elif call.data == 'callback_save_directory_yes':
+        msg = bot.send_message(call.message.chat.id, 'Обробляю ...')
+        save_directory(msg)
+        print('good callback save directory yes')
+    elif call.data == 'callback_save_directory_no':
+        msg = bot.send_message(call.message.chat.id, 'Назад до вибору директорії ...')
+        callback_finally(msg)
+        print('good callback save directory no')
+    elif call.data == 'write':
+        write(call.message)
+    elif call.data == 'read':
+        read(call.message)
+
+
+bot.polling()
+
